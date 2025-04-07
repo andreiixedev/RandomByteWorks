@@ -7,7 +7,7 @@
 #include <termios.h>
 #include <fcntl.h>
 
-// ASCII FukkitServer
+// ASCII Art with colors
 char *fukkit_ascii = 
   "  ______     _    _    _ _                                  \n"
   " |  ____|   | |  | |  (_) |                                 \n"
@@ -23,13 +23,13 @@ char *fukkit_ascii =
 #define PLAYIT_SESSION "playit"
 #define CODE_SERVER_SESSION "code-server"
 
-// Function to check if directory exists, a wait and file
+// Function to check if a file or directory exists
 int check_file_exists(const char *path) {
     struct stat buffer;
     return (stat(path, &buffer) == 0);
 }
 
-// Function to check if a TMUX session exists 
+// Function to check if a TMUX session exists
 int check_session_exists(const char *session) {
     char cmd[256];
     snprintf(cmd, sizeof(cmd), "tmux has-session -t %s 2>/dev/null", session);
@@ -64,12 +64,12 @@ int kbhit(void) {
 
 // Function to apply color changes dynamically
 void apply_color(int color_code) {
-    printf("\033[38;5;%dm", color_code);
+    printf("\033[38;5;%dm", color_code); // Change text color
 }
 
 // Function to reset color to default
 void reset_color() {
-    printf("\033[0m"); 
+    printf("\033[0m"); // Reset to default color
 }
 
 void start_session(const char *session, const char *command) {
@@ -121,20 +121,20 @@ void get_system_usage() {
     unsigned long long user, nice, system, idle, iowait, irq, softirq, steal;
     unsigned long long total1, total2, idle1, idle2;
 
-    // Read of "CPU data"
+    // First read of CPU data
     fp = fopen("/proc/stat", "r");
     if (fp != NULL) {
         fgets(buffer, sizeof(buffer), fp);
-        sscanf(buffer, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal); //delulu
+        sscanf(buffer, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal);
         fclose(fp);
     }
     total1 = user + nice + system + idle + iowait + irq + softirq + steal;
     idle1 = idle;
 
-    // Wait for a short moment to calculate Shitt CPU usage
-    usleep(100000);
+    // Wait for a short moment to calculate CPU usage difference
+    usleep(100000); // Sleep for 100 milliseconds
 
-    // Second read of "CPU data"
+    // Second read of CPU data
     fp = fopen("/proc/stat", "r");
     if (fp != NULL) {
         fgets(buffer, sizeof(buffer), fp);
@@ -144,10 +144,10 @@ void get_system_usage() {
     total2 = user + nice + system + idle + iowait + irq + softirq + steal;
     idle2 = idle;
 
-    // Calculate CPU usage again
+    // Calculate CPU usage
     double cpu_usage = 100.0 * (1.0 - (double)(idle2 - idle1) / (total2 - total1));
 
-    // Read RAM usage (4gb lol)
+    // Read RAM usage
     unsigned long mem_total = 0, mem_free = 0;
     fp = fopen("/proc/meminfo", "r");
     if (fp != NULL) {
@@ -159,6 +159,7 @@ void get_system_usage() {
     }
     double ram_usage = 100.0 * (1.0 - (double)mem_free / mem_total);
 
+    // Display system usage
     printf("-------------------------------\n");
     printf("CPU Usage: %.2f%%\n", cpu_usage);
     printf("RAM Usage: %.2f%%\n", ram_usage);
@@ -168,7 +169,7 @@ void get_system_usage() {
 void display_session_status() {
     printf("[SESSION STATUS]\n");
     if (check_session_exists(MC_SESSION)) {
-        printf("Minecraft Server: RUNNING ✅\n"); 
+        printf("Minecraft Server: RUNNING ✅\n");
     } else {
         printf("Minecraft Server: STOPPED ❌\n");
     }
@@ -187,48 +188,64 @@ void display_session_status() {
     printf("-------------------------------\n");
 }
 
-// Animated aschii
 void ui_loop() {
     int color_code = 0;
+    int reset_done_today = 0;
+
     while (1) {
-        time_t now = time(NULL);
-        struct tm *local = localtime(&now);
-        int remaining_hours = (3 - local->tm_hour + 24) % 24;
-        int remaining_minutes = 59 - local->tm_min;
-        int remaining_seconds = 59 - local->tm_sec;
+        printf("\033[H\033[J"); // Clear the screen
+        apply_color(color_code);
+        printf("%s", fukkit_ascii);
+        reset_color();
 
-        // check if 3AM
-        if (local->tm_hour == 3 && local->tm_min == 0 && local->tm_sec == 0) {
-            printf("[INFO] It's 3 AM! Resetting sessions...\n");
-            reset_sessions();
-            sleep(60); // wait a minute do not mess 
-        }
-
-        printf("\033[H\033[J");
-        apply_color(color_code); 
-        printf("%s", fukkit_ascii); // Display ASCII Art
-        reset_color(); 
-
-        printf("The servers will reset at 03:00 AM\n");
-        printf("Time remaining: %02d:%02d:%02d\n", remaining_hours, remaining_minutes, remaining_seconds);
-
-        // Real time stuff
         get_system_usage();
         display_session_status();
 
-        // Options to make easy
+        // Timpul până la ora 3:00
+        time_t now = time(NULL);
+        struct tm *current_time = localtime(&now);
+
+        // Creează un timp pentru ora 3:00 AM a zilei curente
+        struct tm reset_time = *current_time;
+        reset_time.tm_hour = 3;
+        reset_time.tm_min = 0;
+        reset_time.tm_sec = 0;
+        time_t reset_epoch = mktime(&reset_time);
+
+        // Dacă a trecut de 3 dimineața, setăm ținta pentru a doua zi
+        if (difftime(now, reset_epoch) >= 0) {
+            reset_time.tm_mday += 1;
+            reset_epoch = mktime(&reset_time);
+            reset_done_today = 0; // Resetăm flagul pentru o nouă zi
+        }
+
+        // Afișează timpul rămas până la 3:00 AM
+        int seconds_left = (int)difftime(reset_epoch, now);
+        int hrs = seconds_left / 3600;
+        int mins = (seconds_left % 3600) / 60;
+        int secs = seconds_left % 60;
+
+        printf("[AUTO RESET] Time until 3:00 AM reset: %02d:%02d:%02d\n", hrs, mins, secs);
+
+        // Declanșează reset dacă e ora 3 fix și nu a fost deja făcut
+        if (hrs == 0 && mins == 0 && secs <= 5 && !reset_done_today) {
+            printf("[AUTO RESET] It's 3:00 AM! Resetting sessions...\n");
+            reset_sessions();
+            reset_done_today = 1;
+            sleep(5); // Pauză să nu repornească iar în același minut
+        }
+
+        // Opțiuni
         printf("[1] to reset sessions.\n");
         printf("[2] to reboot.\n");
         printf("[3] to exit.\n");
 
-        // Code-Server
         if (check_session_exists(CODE_SERVER_SESSION)) {
             printf("[4] to stop Code-Server session.\n");
         } else {
             printf("[4] to start Code-Server session.\n");
         }
 
-        // Non-blocking input handling for interactivity
         if (kbhit()) {
             int key = getchar();
             switch (key) {
@@ -246,21 +263,20 @@ void ui_loop() {
                     stop_session(PLAYIT_SESSION);
                     stop_session(CODE_SERVER_SESSION);
 
-                    // Waittttt
                     int tries = 0;
                     while (check_session_exists(MC_SESSION) ||
-                            check_session_exists(PLAYIT_SESSION) ||
-                            check_session_exists(CODE_SERVER_SESSION)) {
+                           check_session_exists(PLAYIT_SESSION) ||
+                           check_session_exists(CODE_SERVER_SESSION)) {
                         printf("[INFO] Waiting for sessions to terminate...\n");
                         sleep(1);
-                        if (++tries >= 10) { // timeout 10sec
+                        if (++tries >= 10) {
                             printf("[WARNING] Some sessions are still running. Forcing exit.\n");
                             break;
                         }
                     }
 
                     printf("[INFO] All sessions terminated. Exiting now.\n");
-                    return; // exit from this mess
+                    return;
 
                 case '4':
                     if (check_session_exists(CODE_SERVER_SESSION)) {
@@ -274,20 +290,19 @@ void ui_loop() {
             }
         }
 
-        // Update color
-        color_code = (color_code + 1) % 8; // Color range [0, 7]
-        sleep(1); // Update 
+        color_code = (color_code + 1) % 8;
+        sleep(1);
     }
 }
 
 int main() {
     printf("[INFO] Starting the Fukkit server monitor...\n");
 
-    // Checks
+    // Initial check and starting sessions
     start_session(MC_SESSION, "cd /home/andreiixe/minecraft && ./start.sh");
     start_session(PLAYIT_SESSION, "playit");
     start_session(CODE_SERVER_SESSION, "code-server");
 
-    ui_loop(); // loop this mess
+    ui_loop(); // Start the UI loop
     return 0;
 }
