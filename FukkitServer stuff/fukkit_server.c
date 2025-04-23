@@ -72,6 +72,7 @@ void reset_color() {
     printf("\033[0m"); // Reset to default color
 }
 
+// Function to start a TMUX session
 void start_session(const char *session, const char *command) {
     if (!check_session_exists(session)) {
         char cmd[256];
@@ -86,6 +87,7 @@ void start_session(const char *session, const char *command) {
     }
 }
 
+// Function to stop a TMUX session
 void stop_session(const char *session) {
     if (check_session_exists(session)) {
         char cmd[256];
@@ -97,6 +99,7 @@ void stop_session(const char *session) {
     }
 }
 
+// Function to reset all sessions
 void reset_sessions() {
     printf("[INFO] Resetting sessions...\n");
 
@@ -115,80 +118,62 @@ void reset_sessions() {
     sleep(5);
 }
 
-void get_system_usage() {
-    FILE *fp;
-    char buffer[128];
-    unsigned long long user, nice, system, idle, iowait, irq, softirq, steal;
-    unsigned long long total1, total2, idle1, idle2;
+// Function to read the command from "command_input.txt"
+void execute_command_from_file() {
+    if (check_file_exists("command_input.txt")) {
+        FILE *file = fopen("command_input.txt", "r");
+        if (file != NULL) {
+            char command[10]; // Expecting a single character command (e.g. '4', '3', etc.)
+            if (fgets(command, sizeof(command), file) != NULL) {
+                printf("[INFO] Executing command: %s\n", command);
+                switch (command[0]) {
+                    case '1':
+                        reset_sessions();
+                        break;
+                    case '2':
+                        system("sudo reboot");
+                        break;
+                    case '3':
+                        printf("Exiting...\n");
+                        exit(0);
+                    case '4':
+                        if (check_session_exists(CODE_SERVER_SESSION))
+                            stop_session(CODE_SERVER_SESSION);
+                        else
+                            start_session(CODE_SERVER_SESSION, "code-server");
+                        break;
+                    case '5':
+                        stop_session(MC_SESSION);
+                        sleep(1);
+                        start_session(MC_SESSION, "cd ~/minecraft && ./start.sh");
+                        break;
+                    case '6':
+                        stop_session(PLAYIT_SESSION);
+                        sleep(1);
+                        start_session(PLAYIT_SESSION, "~/playit/playit-linux");
+                        break;
+                    default:
+                        printf("[ERROR] Invalid command in command_input.txt\n");
+                }
+            }
+            fclose(file);
 
-    // First read of CPU data
-    fp = fopen("/proc/stat", "r");
-    if (fp != NULL) {
-        fgets(buffer, sizeof(buffer), fp);
-        sscanf(buffer, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal);
-        fclose(fp);
-    }
-    total1 = user + nice + system + idle + iowait + irq + softirq + steal;
-    idle1 = idle;
-
-    // Wait for a short moment to calculate CPU usage difference
-    usleep(100000); // Sleep for 100 milliseconds
-
-    // Second read of CPU data
-    fp = fopen("/proc/stat", "r");
-    if (fp != NULL) {
-        fgets(buffer, sizeof(buffer), fp);
-        sscanf(buffer, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal);
-        fclose(fp);
-    }
-    total2 = user + nice + system + idle + iowait + irq + softirq + steal;
-    idle2 = idle;
-
-    // Calculate CPU usage
-    double cpu_usage = 100.0 * (1.0 - (double)(idle2 - idle1) / (total2 - total1));
-
-    // Read RAM usage
-    unsigned long mem_total = 0, mem_free = 0;
-    fp = fopen("/proc/meminfo", "r");
-    if (fp != NULL) {
-        while (fgets(buffer, sizeof(buffer), fp)) {
-            sscanf(buffer, "MemTotal: %lu kB", &mem_total);
-            sscanf(buffer, "MemFree: %lu kB", &mem_free);
+            // Delete the file after executing the command
+            if (remove("command_input.txt") == 0) {
+                printf("[INFO] command_input.txt deleted after execution.\n");
+            } else {
+                printf("[ERROR] Failed to delete command_input.txt\n");
+            }
+        } else {
+            printf("[ERROR] Could not open command_input.txt!\n");
         }
-        fclose(fp);
     }
-    double ram_usage = 100.0 * (1.0 - (double)mem_free / mem_total);
-
-    // Display system usage
-    printf("-------------------------------\n");
-    printf("CPU Usage: %.2f%%\n", cpu_usage);
-    printf("RAM Usage: %.2f%%\n", ram_usage);
-    printf("-------------------------------\n");
 }
 
-void display_session_status() {
-    printf("[SESSION STATUS]\n");
-    if (check_session_exists(MC_SESSION)) {
-        printf("Minecraft Server: RUNNING ✅\n");
-    } else {
-        printf("Minecraft Server: STOPPED ❌\n");
-    }
-
-    if (check_session_exists(PLAYIT_SESSION)) {
-        printf("Playit: RUNNING ✅\n");
-    } else {
-        printf("Playit: STOPPED ❌\n");
-    }
-
-    if (check_session_exists(CODE_SERVER_SESSION)) {
-        printf("Code-Server: RUNNING\n");
-    } else {
-        printf("Code-Server: STOPPED\n");
-    }
-    printf("-------------------------------\n");
-}
-
+// UI loop for handling user inputs
+// UI loop for handling user inputs
 void ui_loop() {
+    printf("%s", fukkit_ascii);
     int color_code = 0;
     int reset_done_today = 0;
 
@@ -198,54 +183,69 @@ void ui_loop() {
         printf("%s", fukkit_ascii);
         reset_color();
 
-        get_system_usage();
-        display_session_status();
+        // UI aesthetic starts here
+        printf("╔═══════════════[ FUKKIT SERVER DASHBOARD ]═══════════════╗\n");
+        printf("║  [1] Reset all sessions                                 ║\n");
+        printf("║  [2] Reboot system                                      ║\n");
+        printf("║  [3] Exit                                               ║\n");
 
-        // Timpul până la ora 3:00
+        // Code-Server Session
+        if (check_session_exists(CODE_SERVER_SESSION)) {
+            printf("║  [4] Code-Server: Running                                ║\n");
+            printf("║      ┌─ Last Output ─────────────────────────────────┐  ║\n");
+            system("tmux capture-pane -pt code-server -S -10 | tail -n 10");
+            printf("║      └───────────────────────────────────────────────┘  ║\n");
+        } else {
+            printf("║  [4] Code-Server: Not Running                          ║\n");
+        }
+
+        // Minecraft Server Session
+        printf("║  [5] Reset Minecraft server                             ║\n");
+        if (check_session_exists(MC_SESSION)) {
+            printf("║      Status: Running                                    ║\n");
+            printf("║      ┌─ Last Output ─────────────────────────────────┐  ║\n");
+            system("tmux capture-pane -pt minecraftserver -S -10 | tail -n 10");
+            printf("║      └───────────────────────────────────────────────┘  ║\n");
+        } else {
+            printf("║      Status: Not Running                               ║\n");
+        }
+
+        // Playit Session
+        printf("║  [6] Reset Playit                                       ║\n");
+        if (check_session_exists(PLAYIT_SESSION)) {
+            printf("║      Status: Running                                    ║\n");
+        } else {
+            printf("║      Status: Not Running                               ║\n");
+        }
+
+        // Reset countdown
         time_t now = time(NULL);
         struct tm *current_time = localtime(&now);
 
-        // Creează un timp pentru ora 3:00 AM a zilei curente
         struct tm reset_time = *current_time;
         reset_time.tm_hour = 3;
         reset_time.tm_min = 0;
         reset_time.tm_sec = 0;
-        time_t reset_epoch = mktime(&reset_time);
 
-        // Dacă a trecut de 3 dimineața, setăm ținta pentru a doua zi
+        time_t reset_epoch = mktime(&reset_time);
         if (difftime(now, reset_epoch) >= 0) {
             reset_time.tm_mday += 1;
             reset_epoch = mktime(&reset_time);
-            reset_done_today = 0; // Resetăm flagul pentru o nouă zi
+            reset_done_today = 0;
         }
 
-        // Afișează timpul rămas până la 3:00 AM
         int seconds_left = (int)difftime(reset_epoch, now);
         int hrs = seconds_left / 3600;
         int mins = (seconds_left % 3600) / 60;
         int secs = seconds_left % 60;
 
-        printf("[AUTO RESET] Time until 3:00 AM reset: %02d:%02d:%02d\n", hrs, mins, secs);
+        printf("║  Auto reset at 3:00 AM in: %02d:%02d:%02d                     ║\n", hrs, mins, secs);
+        printf("╚═════════════════════════════════════════════════════════╝\n");
 
-        // Declanșează reset dacă e ora 3 fix și nu a fost deja făcut
-        if (hrs == 0 && mins == 0 && secs <= 5 && !reset_done_today) {
-            printf("[AUTO RESET] It's 3:00 AM! Resetting sessions...\n");
-            reset_sessions();
-            reset_done_today = 1;
-            sleep(5); // Pauză să nu repornească iar în același minut
-        }
+        // Execute command from file automatically
+        execute_command_from_file();
 
-        // Opțiuni
-        printf("[1] to reset sessions.\n");
-        printf("[2] to reboot.\n");
-        printf("[3] to exit.\n");
-
-        if (check_session_exists(CODE_SERVER_SESSION)) {
-            printf("[4] to stop Code-Server session.\n");
-        } else {
-            printf("[4] to start Code-Server session.\n");
-        }
-
+        // Execute user input commands via keyboard
         if (kbhit()) {
             int key = getchar();
             switch (key) {
@@ -253,56 +253,43 @@ void ui_loop() {
                     reset_sessions();
                     break;
                 case '2':
-                    printf("[INFO] Rebooting system...\n");
                     system("sudo reboot");
                     break;
                 case '3':
-                    printf("[INFO] Exiting program... Waiting for sessions to stop.\n");
+                    // Stop all sessions before exit
+                    printf("[INFO] Stopping all sessions before exit...\n");
 
+                    stop_session(CODE_SERVER_SESSION);
                     stop_session(MC_SESSION);
                     stop_session(PLAYIT_SESSION);
-                    stop_session(CODE_SERVER_SESSION);
 
-                    int tries = 0;
-                    while (check_session_exists(MC_SESSION) ||
-                           check_session_exists(PLAYIT_SESSION) ||
-                           check_session_exists(CODE_SERVER_SESSION)) {
-                        printf("[INFO] Waiting for sessions to terminate...\n");
-                        sleep(1);
-                        if (++tries >= 10) {
-                            printf("[WARNING] Some sessions are still running. Forcing exit.\n");
-                            break;
-                        }
-                    }
-
-                    printf("[INFO] All sessions terminated. Exiting now.\n");
-                    return;
-
-                case '4':
-                    if (check_session_exists(CODE_SERVER_SESSION)) {
-                        stop_session(CODE_SERVER_SESSION);
-                    } else {
-                        start_session(CODE_SERVER_SESSION, "code-server");
-                    }
+                    // Exit the program after stopping sessions
+                    printf("[INFO] Exiting...\n");
+                    exit(0);
                     break;
-                default:
+                case '4':
+                    if (check_session_exists(CODE_SERVER_SESSION))
+                        stop_session(CODE_SERVER_SESSION);
+                    else
+                        start_session(CODE_SERVER_SESSION, "code-server");
+                    break;
+                case '5':
+                    stop_session(MC_SESSION);
+                    sleep(1);
+                    start_session(MC_SESSION, "cd ~/minecraft && ./start.sh");
+                    break;
+                case '6':
+                    stop_session(PLAYIT_SESSION);
+                    sleep(1);
+                    start_session(PLAYIT_SESSION, "~/playit/playit-linux");
                     break;
             }
         }
-
-        color_code = (color_code + 1) % 8;
         sleep(1);
     }
 }
 
 int main() {
-    printf("[INFO] Starting the Fukkit server monitor...\n");
-
-    // Initial check and starting sessions
-    start_session(MC_SESSION, "cd /home/andreiixe/minecraft && ./start.sh");
-    start_session(PLAYIT_SESSION, "playit");
-    start_session(CODE_SERVER_SESSION, "code-server");
-
-    ui_loop(); // Start the UI loop
+    ui_loop();
     return 0;
 }
