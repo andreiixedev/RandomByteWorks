@@ -7,7 +7,6 @@
 #include <termios.h>
 #include <fcntl.h>
 
-// ASCII Art with colors
 char *fukkit_ascii = 
   "  ______     _    _    _ _                                  \n"
   " |  ____|   | |  | |  (_) |                                 \n"
@@ -21,7 +20,12 @@ char *fukkit_ascii =
 #define MC_SESSION "minecraftserver"
 #define PLAYIT_SESSION "playit"
 #define CODE_SERVER_SESSION "code-server"
+#define PANELBOT_SESSION "panelbot"
 #define NETWORK_INTERFACE "wls3"  // Ajustează la interfața ta, ex: "eth0" sau "wlan0"
+
+// Declarațiile funcțiilor
+void reset_sessions(void);
+void reset_panelbot_session(void);
 
 int check_file_exists(const char *path) {
     struct stat buffer;
@@ -81,19 +85,20 @@ void stop_session(const char *session) {
     }
 }
 
-void reset_sessions() {
-    printf("[INFO] Resetting all sessions...\n");
-    if (!check_file_exists(MC_DIR)) {
-        printf("[ERROR] Directory %s does not exist\n", MC_DIR);
-        return;
+void start_panelbot_session() {
+    if (!check_session_exists(PANELBOT_SESSION)) {
+        char cmd[512];
+        printf("[INFO] Starting PANELBOT session...\n");
+        
+        // Crează comanda pentru a activa mediul virtual și a porni botul
+        snprintf(cmd, sizeof(cmd), "tmux new-session -d -s %s \"source botenv/bin/activate && export DISCORD_BOT_TOKEN=HEHEHE && python3 bot.py\"", PANELBOT_SESSION);
+        
+        if (system(cmd) != 0) {
+            printf("[ERROR] Failed to start PANELBOT session\n");
+        }
+    } else {
+        printf("[INFO] PANELBOT session already running\n");
     }
-    stop_session(MC_SESSION);
-    stop_session(PLAYIT_SESSION);
-    stop_session(CODE_SERVER_SESSION);
-    sleep(5);
-    start_session(MC_SESSION, "cd /home/andreiixe/minecraft && ./start.sh");
-    start_session(PLAYIT_SESSION, "playit");
-    sleep(5);
 }
 
 void execute_command_from_file() {
@@ -123,6 +128,9 @@ void execute_command_from_file() {
                 sleep(1);
                 start_session(PLAYIT_SESSION, "~/playit/playit-linux");
                 break;
+            case '7':
+                reset_panelbot_session();  // Reset panelbot
+                break;
             default:
                 printf("[ERROR] Invalid command\n");
         }
@@ -131,29 +139,70 @@ void execute_command_from_file() {
     remove("command_input.txt");
 }
 
-// Verifică dacă rețeaua e online
 int is_online() {
     return (system("ping -c1 -W1 8.8.8.8 > /dev/null 2>&1") == 0);
 }
 
-// Reset al interfeței doar când e offline și la 20s între resetări
-void reset_network_interface() {
-    static time_t last_network_reset = 0;
-    time_t now = time(NULL);
-
-    if (!is_online() && now - last_network_reset >= 20) {
-        last_network_reset = now;
-        printf("[INFO] Network is offline, resetting %s...\n", NETWORK_INTERFACE);
-
-        char cmd[256];
-        snprintf(cmd, sizeof(cmd), "sudo ip link set %s down", NETWORK_INTERFACE);
-        system(cmd);
-        sleep(10);
-        snprintf(cmd, sizeof(cmd), "sudo ip link set %s up", NETWORK_INTERFACE);
-        system(cmd);
-
-        printf("[INFO] Network interface %s has been reset.\n", NETWORK_INTERFACE);
+void get_cpu_usage() {
+    FILE *fp = popen("top -bn1 | grep 'Cpu' | sed \"s/.*, *\\([0-9.]*\\)%* id.*/\\1/\" | awk '{print 100 - $1}'", "r");
+    if (fp) {
+        char buffer[256];
+        if (fgets(buffer, sizeof(buffer), fp)) {
+            printf("║  CPU Usage: %.2f%%\n", atof(buffer));
+        }
+        fclose(fp);
     }
+}
+
+void get_memory_usage() {
+    FILE *fp = popen("free | grep Mem | awk '{print $3/$2 * 100.0}'", "r");
+    if (fp) {
+        char buffer[256];
+        if (fgets(buffer, sizeof(buffer), fp)) {
+            float memory_usage = atof(buffer);
+            printf("║  Memory Usage: [");
+
+            int bars = (int)(memory_usage / 5); 
+            for (int i = 0; i < 20; i++) {
+                if (i < bars) {
+                    printf("=");
+                } else {
+                    printf(" ");
+                }
+            }
+
+            printf("] %.2f%%\n", memory_usage);
+        }
+        fclose(fp);
+    }
+}
+
+void get_ping() {
+    FILE *fp = popen("ping -c 1 8.8.8.8 | grep 'time=' | awk -F'=' '{print $4}' | cut -d' ' -f1", "r");
+    if (fp) {
+        char buffer[256];
+        if (fgets(buffer, sizeof(buffer), fp)) {
+            printf("║  Ping: %s", buffer);
+        }
+        fclose(fp);
+    }
+}
+
+
+void reset_sessions() {
+    stop_session(MC_SESSION);
+    stop_session(CODE_SERVER_SESSION);
+    stop_session(PLAYIT_SESSION);
+    stop_session(PANELBOT_SESSION);
+    sleep(1);
+    start_session(CODE_SERVER_SESSION, "code-server");
+    start_session(MC_SESSION, "cd ~/minecraft && ./start.sh");
+    start_session(PLAYIT_SESSION, "playit");
+    start_panelbot_session();
+}
+
+void reset_panelbot_session() {
+    stop_session(PANELBOT_SESSION);
 }
 
 void ui_loop() {
@@ -162,47 +211,63 @@ void ui_loop() {
         printf("%s", fukkit_ascii);
         reset_color();
 
-        printf("╔═══════════════[ FUKKIT SERVER DASHBOARD ]═══════════════╗\n");
-        printf("║  [1] Reset all sessions                                 ║\n");
-        printf("║  [2] Reboot system                                      ║\n");
-        printf("║  [3] Exit                                               ║\n");
+        printf("╔═══════════════[ FUKKIT SERVER DASHBOARD ]═══════════════\n");
+        printf("║  [1] Reset all sessions                                 \n");
+        printf("║  [2] Reboot system                                      \n");
+        printf("║  [3] Exit                                               \n");
 
         if (check_session_exists(CODE_SERVER_SESSION)) {
-            printf("║  [4] Code-Server: Running                               ║\n");
-            printf("║      ┌─ Last Output ─────────────────────────────────┐  ║\n");
+            printf("║  [4] Code-Server: Running                               \n");
+            printf("║      ┌─ Last Output ─────────────────────────────────┐  \n");
             system("tmux capture-pane -pt code-server -S -10 | tail -n 10");
-            printf("║      └───────────────────────────────────────────────┘  ║\n");
+            printf("║      └───────────────────────────────────────────────┘  \n");
         } else {
-            printf("║  [4] Code-Server: Not Running                          ║\n");
+            printf("║  [4] Code-Server: Not Running                          \n");
         }
 
-        printf("║  [5] Reset Minecraft server                             ║\n");
+        printf("║  [5] Reset Minecraft server                            \n");
         if (check_session_exists(MC_SESSION)) {
-            printf("║      Status: Running                                    ║\n");
-            printf("║      ┌─ Last Output ─────────────────────────────────┐  ║\n");
+            printf("║      Status: Running                                    \n");
+            printf("║      ┌─ Last Output ─────────────────────────────────┐  \n");
             system("tmux capture-pane -pt minecraftserver -S -10 | tail -n 10");
-            printf("║      └───────────────────────────────────────────────┘  ║\n");
+            printf("║      └───────────────────────────────────────────────┘  \n");
         } else {
-            printf("║      Status: Not Running                               ║\n");
+            printf("║      Status: Not Running                               \n");
         }
 
-        printf("║  [6] Reset Playit                                       ║\n");
+        printf("║  [6] Reset Playit                                       \n");
         if (check_session_exists(PLAYIT_SESSION)) {
-            printf("║      Status: Running                                    ║\n");
+            printf("║      Status: Running                                    \n");
         } else {
-            printf("║      Status: Not Running                               ║\n");
+            printf("║      Status: Not Running                               \n");
         }
 
+        printf("║  [7] Reset Panelbot: ");
+        if (check_session_exists(PANELBOT_SESSION)) {
+            printf("Running                                    \n");
+        } else {
+            printf("Not Running                       \n");
+        }
+
+        printf("║\n");
+        printf("║\n");
+        printf("║ ┌─ System Status ───────────────────────────────┐  \n");
         printf("║  Network Status: ");
         if (is_online()) {
-            printf("\033[32mONLINE\033[0m                                 ║\n");
+            printf("\033[32mONLINE\033[0m                                \n");
+            get_ping();
         } else {
-            printf("\033[31mOFFLINE\033[0m                                ║\n");
-            reset_network_interface();
+            printf("\033[31mOFFLINE\033[0m                                \n");
         }
 
-        printf("╚═════════════════════════════════════════════════════════╝\n");
+        get_cpu_usage();
+        get_memory_usage();
 
+        printf("║ └───────────────────────────────────────────────┘  \n");
+
+        printf("║\n");
+        printf("║\n");
+        printf("╚═════════════════════════════════════════════════════════\n");
         execute_command_from_file();
 
         if (kbhit()) {
@@ -214,6 +279,7 @@ void ui_loop() {
                     stop_session(CODE_SERVER_SESSION);
                     stop_session(MC_SESSION);
                     stop_session(PLAYIT_SESSION);
+                    stop_session(PANELBOT_SESSION); 
                     printf("[INFO] Exiting...\n");
                     exit(0);
                 case '4':
@@ -230,7 +296,12 @@ void ui_loop() {
                 case '6':
                     stop_session(PLAYIT_SESSION);
                     sleep(1);
-                    start_session(PLAYIT_SESSION, "~/playit/playit-linux");
+                    start_session(PLAYIT_SESSION, "playit");
+                    break;
+                case '7':
+                    stop_session(PANELBOT_SESSION);
+                    sleep(1);
+                    start_panelbot_session();
                     break;
             }
         }
