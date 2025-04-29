@@ -91,7 +91,7 @@ void start_panelbot_session() {
         printf("[INFO] Starting PANELBOT session...\n");
         
         // Crează comanda pentru a activa mediul virtual și a porni botul
-        snprintf(cmd, sizeof(cmd), "tmux new-session -d -s %s \"source botenv/bin/activate && export DISCORD_BOT_TOKEN=HEHEHE && python3 bot.py\"", PANELBOT_SESSION);
+        snprintf(cmd, sizeof(cmd), "tmux new-session -d -s %s \"source botenv/bin/activate && export DISCORD_BOT_TOKEN=HEHEHEHE && python3 bot.py\"", PANELBOT_SESSION);
         
         if (system(cmd) != 0) {
             printf("[ERROR] Failed to start PANELBOT session\n");
@@ -141,6 +141,26 @@ void execute_command_from_file() {
 
 int is_online() {
     return (system("ping -c1 -W1 8.8.8.8 > /dev/null 2>&1") == 0);
+}
+
+// Reset al interfeței doar când e offline și la 20s între resetări
+void reset_network_interface() {
+    static time_t last_network_reset = 0;
+    time_t now = time(NULL);
+
+    if (!is_online() && now - last_network_reset >= 20) {
+        last_network_reset = now;
+        printf("[INFO] Network is offline, resetting %s...\n", NETWORK_INTERFACE);
+
+        char cmd[256];
+        snprintf(cmd, sizeof(cmd), "sudo ip link set %s down", NETWORK_INTERFACE);
+        system(cmd);
+        sleep(10);
+        snprintf(cmd, sizeof(cmd), "sudo ip link set %s up", NETWORK_INTERFACE);
+        system(cmd);
+
+        printf("[INFO] Network interface %s has been reset.\n", NETWORK_INTERFACE);
+    }
 }
 
 void get_cpu_usage() {
@@ -258,6 +278,7 @@ void ui_loop() {
             get_ping();
         } else {
             printf("\033[31mOFFLINE\033[0m                                \n");
+            reset_network_interface();
         }
 
         get_cpu_usage();
