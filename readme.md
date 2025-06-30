@@ -44,9 +44,3 @@ Because inspiration strikes at odd times, and RandomByteWorks is where I let tha
 - Whatever else I feel like playing with...
 
 ---
-
-## 📜 License
-
-Most projects are MIT licensed, unless stated otherwise.
-
----
